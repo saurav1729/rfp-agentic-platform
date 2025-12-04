@@ -10,7 +10,7 @@ COPY . .
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 
-# --- IGNORE ---
+# --- START DOCKER ---
 # To build the Docker image, use:
 #    docker build -t rfp-api .
 # To run the Docker container, use:

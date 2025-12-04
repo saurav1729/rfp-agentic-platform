@@ -1,64 +1,135 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+# app/main.py
 from contextlib import asynccontextmanager
 import logging
+from typing import AsyncGenerator, Optional
+
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config.settings import settings
 from app.core.logging_config import configure_logging
+from app.api.router import router as api_router
 
-# Configure logging
-configure_logging()
+# Optional DB module: we'll import with try/except so app still works without DB.
+try:
+    from app.db.mongo import mongo_client  # <- stub provided below
+except Exception:
+    mongo_client = None
+
 logger = logging.getLogger(__name__)
 
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     """
-#     Lifespan context manager for startup and shutdown events
-#     """
-#     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-#     yield
-#     logger.info(f"Shutting down {settings.APP_NAME}")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Lifespan manager. Connect to resources here (DB, caches, schedulers).
+    If a DB module is present, it will be used; otherwise we skip DB steps.
+    """
+    logger.info("Starting app %s %s", settings.APP_NAME, settings.APP_VERSION)
+
+    # Initialize optional components (Sentry, metrics) if configured
+    if settings.SENTRY_DSN:
+        # import and init sentry here (optional)
+        logger.info("Sentry DSN found (not initialized in stub)")
+
+    # Connect DB if module is present
+    if mongo_client is not None:
+        try:
+            await mongo_client.connect()
+            logger.info("MongoDB connected")
+        except Exception:
+            logger.exception("Failed to connect to MongoDB during startup")
+            # Decide: raise to abort startup or continue with degraded mode
+            raise
+
+    yield  # application running
+
+    # Graceful shutdown: disconnect resources
+    if mongo_client is not None:
+        try:
+            await mongo_client.disconnect()
+            logger.info("MongoDB disconnected")
+        except Exception:
+            logger.exception("Error while disconnecting MongoDB")
 
 
-# Initialize FastAPI app
-app = FastAPI(
-    title=settings.APP_NAME,
-    description=settings.APP_DESCRIPTION,
-    version=settings.APP_VERSION,
-)
+def create_app() -> FastAPI:
+    configure_logging()
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        debug=settings.DEBUG,
+        lifespan=lifespan,
+        docs_url="/docs" if settings.DEBUG else None,
+        redoc_url="/redoc" if settings.DEBUG else None,
+        openapi_url="/openapi.json" if settings.DEBUG else None,
+    )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # Middleware
+    trusted_hosts = getattr(settings, "TRUSTED_HOSTS", None)
+    if trusted_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
-# Include routes
-# app.include_router(api_router, prefix="/api")
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Welcome to the RFP Agentic Platform 🚀",
-        "docs": "/docs",
-        "health": "/health",
-    }
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=settings.CORS_METHODS or ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=settings.CORS_HEADERS or ["*"],
+    )
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "app": settings.APP_NAME}
+    # Register routers (keep router implementations in app/api)
+    app.include_router(api_router, prefix="/api")
+
+    # Light-weight health & readiness endpoints
+    @app.get("/health", tags=["health"])
+    async def health():
+        return {"status": "healthy", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+
+    @app.get("/ready", tags=["health"])
+    async def ready():
+        # If DB available, include its readiness
+        db_ready = True
+        if mongo_client is not None:
+            try:
+                db_ready = mongo_client.is_connected()
+            except Exception:
+                db_ready = False
+
+        status_code = status.HTTP_200_OK if db_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(content={"db": db_ready}, status_code=status_code)
+
+    # Global exception handlers
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        logger.warning("HTTP error %s %s", exc.status_code, exc.detail)
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled exception: %s", exc)
+        payload = {"detail": "Internal Server Error"} if not settings.DEBUG else {"detail": str(exc)}
+        return JSONResponse(payload, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
+        log_level="info",
     )
