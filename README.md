@@ -1,21 +1,4 @@
-Running your FastAPI app **inside a virtual environment (venv) is the recommended and professional way**.
-Here’s why and how:
-
----
-
-# ✅ **Should you run in venv?**
-
-### **YES — always recommended.**
-
-### **Why?**
-
-✔ Keeps dependencies isolated
-✔ Avoids conflicts with system Python packages
-✔ Makes deployment easier
-✔ Lets you freeze requirements (`pip freeze > requirements.txt`)
-✔ Useful when working on multiple projects
-
----
+Running your FastAPI app **inside a virtual environment (venv) is the recommended way**.
 
 # ✅ **How to create & activate a venv**
 
@@ -69,24 +52,6 @@ pip install -r requirements.txt
 
 # ✅ **4️⃣ Run your FastAPI app**
 
-If your file is `app/main.py`:
-
 ```bash
 uvicorn app.main:app --reload
 ```
-
-If your file is just `main.py` at project root:
-
-```bash
-uvicorn main:app --reload
-```
-
----
-
-# ❓ Want auto-reload, logging, hot-reload, or .env support?
-
-I can set that up too — just tell me.
-
----
-
-If you want, I can also help you create the **best FastAPI project structure** for production.
