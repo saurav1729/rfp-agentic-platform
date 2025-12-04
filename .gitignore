@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# Virtual env
+venv/
+env/
+
+# FastAPI cache
+*.sqlite3
+
+# Environment files
+.env
+.env.*
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Pytest
+.cache/
+.coverage
+
+# OS files
+.DS_Store
+Thumbs.db
