@@ -7,147 +7,151 @@ Original file is located at
     https://colab.research.google.com/drive/1XkOoI_cftt-FWPdJs1ojvOQhzZqy4zSS
 """
 
-!pip install -y google-ai-generativelanguage
-!pip install -U google-generativeai pymongo nltk
-
 import json
 import nltk
-from pymongo import MongoClient
-from google.colab import userdata
-import google.generativeai as genai
-
-# -------- Gemini API key --------
-# API_KEY = userdata.get("GEMINI_API_KEY")
-API_KEY = "AIzaSyCDqiSCiozPGyTSQqLYhPGXz_DdjkqVYuk"
-if not API_KEY:
-    raise RuntimeError("Set GEMINI_API_KEY in Colab (Settings → Variables).")
-
-genai.configure(api_key=API_KEY)
-
-# -------- NLTK (optional, for later if needed) --------
-nltk.download("stopwords", quiet=True)
-
-# -------- MongoDB Atlas connection --------
-MONGO_URL = "mongodb+srv://sharibhasnain8_db_user:V9trVf1wTe8GDUuW@sharib.urytptj.mongodb.net/?retryWrites=true&w=majority&appName=Sharib"
-
-client = MongoClient(MONGO_URL)
-db = client["asian_paints_db"]
-products_col = db["products"]
-rfps_col = db["rfps"]   # new collection for RFPs
-
-print("✅ Gemini ready")
-print("✅ Connected to MongoDB Atlas")
-print("Products in DB:", products_col.count_documents({}))
-
 import requests
-
-# ---- 1. Text Embedding (Gemini) ----
-def generate_embedding(content: str, model: str = "models/text-embedding-004"):
-    """
-    Returns a list[float] embedding for the given content.
-    """
-    try:
-        resp = genai.embed_content(
-            model=model,
-            content=content,
-            request_options={"timeout": 120},
-        )
-        return resp["embedding"]
-    except requests.exceptions.ReadTimeout as e:
-        print("⏱️ Request timed out:", e)
-        return None
-    except Exception as e:
-        print("❌ Embedding error:", e)
-        return None
-
-# ---- 2. Product vector search using MongoDB $vectorSearch ----
-def search_products_by_embedding(query_embedding, top_k: int = 5):
-    if query_embedding is None:
-        print("❌ query_embedding is None")
-        return []
-
-    pipeline = [
-        {
-            "$vectorSearch": {
-                "index": "default",              # <--- your index name
-                "queryVector": query_embedding,
-                "path": "embedding",             # <--- field in product docs
-                "numCandidates": 50,
-                "limit": top_k,
-            }
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "sku": 1,
-                "name": 1,
-                "description": 1,
-                "_score": {"$meta": "vectorSearchScore"},
-            }
-        },
-    ]
-
-    return list(products_col.aggregate(pipeline))
-
-docs = list(products_col.find({}))
-print("Found products:", len(docs))
-
-updated = 0
-
-for doc in docs:
-    desc = doc.get("description", "")
-    if not desc:
-        print("⚠️ Skipping (no description):", doc.get("sku"))
-        continue
-
-    emb = generate_embedding(desc)
-    if emb is None:
-        print("⚠️ Failed embedding for:", doc.get("sku"))
-        continue
-
-    products_col.update_one(
-        {"_id": doc["_id"]},
-        {"$set": {"embedding": emb}}
-    )
-    updated += 1
-
-print("✅ Product embeddings updated:", updated)
-print("Products with embedding:",
-      products_col.count_documents({"embedding": {"$exists": True}}))
-
+from pymongo import MongoClient
+import google.generativeai as genai
 from google.colab import files
 
-print("📂 Upload RFP JSON file")
-uploaded = files.upload()
-rfp_filename = list(uploaded.keys())[0]
+class TechnicalAgent:
 
-with open(rfp_filename, "r") as f:
-    rfp_json = json.load(f)
+    def __init__(self, api_key, mongo_url):
+        self.api_key = api_key
+        self.mongo_url = mongo_url
 
-print("✅ Loaded RFP JSON:")
-print(rfp_json)
+        genai.configure(api_key=self.api_key)
+        nltk.download("stopwords", quiet=True)
 
-# Convert full JSON to text string for embedding and summary
-rfp_text = json.dumps(rfp_json, indent=2)
+        self.client = MongoClient(self.mongo_url)
+        self.db = self.client["asian_paints_db"]
+        self.products_col = self.db["products"]
+        self.rfps_col = self.db["rfps"]
 
-rfp_embedding = generate_embedding(rfp_text)
-print("Embedding length:", len(rfp_embedding) if rfp_embedding else None)
+        print("✅ Gemini ready")
+        print("✅ Connected to MongoDB Atlas")
+        print("Products in DB:", self.products_col.count_documents({}))
 
-rfp_id = rfps_col.insert_one(
-    {
-        "rfp_data": rfp_json,
-        "rfp_text": rfp_text,
-        "embedding": rfp_embedding,
-    }
-).inserted_id
+    def generate_embedding(self, content: str, model="models/text-embedding-004"):
+        try:
+            resp = genai.embed_content(
+                model=model,
+                content=content,
+                request_options={"timeout": 120},
+            )
+            return resp["embedding"]
+        except requests.exceptions.ReadTimeout as e:
+            print("⏱️ Request timed out:", e)
+            return None
+        except Exception as e:
+            print("❌ Embedding error:", e)
+            return None
 
-print("✅ RFP stored in MongoDB with _id:", rfp_id)
+    def search_products(self, query_embedding, top_k=5):
+        if query_embedding is None:
+            print("❌ query_embedding is None")
+            return []
 
-matches = search_products_by_embedding(rfp_embedding, top_k=5)
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "default",
+                    "queryVector": query_embedding,
+                    "path": "embedding",
+                    "numCandidates": 50,
+                    "limit": top_k,
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "sku": 1,
+                    "name": 1,
+                    "description": 1,
+                    "_score": {"$meta": "vectorSearchScore"},
+                }
+            },
+        ]
 
-print("\n===== MATCHING PRODUCTS =====\n")
-for m in matches:
-    print("Name:", m.get("name"))
-    print("SKU:", m.get("sku"))
-    print("Score:", m.get("_score"))
-    print("-" * 40)
+        return list(self.products_col.aggregate(pipeline))
+
+    def update_product_embeddings(self):
+        docs = list(self.products_col.find({}))
+        print("Found products:", len(docs))
+
+        updated = 0
+        for doc in docs:
+            desc = doc.get("description", "")
+            if not desc:
+                print("⚠️ Skipping (no description):", doc.get("sku"))
+                continue
+
+            emb = self.generate_embedding(desc)
+            if emb is None:
+                print("⚠️ Failed embedding for:", doc.get("sku"))
+                continue
+
+            self.products_col.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"embedding": emb}}
+            )
+            updated += 1
+
+        print("✅ Product embeddings updated:", updated)
+        print("Products with embedding:",
+              self.products_col.count_documents({"embedding": {"$exists": True}}))
+
+    def upload_and_store_rfp(self):
+        print("📂 Upload RFP JSON file")
+        uploaded = files.upload()
+
+        rfp_filename = list(uploaded.keys())[0]
+
+        with open(rfp_filename, "r") as f:
+            rfp_json = json.load(f)
+
+        print("✅ Loaded RFP JSON:")
+        print(rfp_json)
+
+        rfp_text = json.dumps(rfp_json, indent=2)
+
+        rfp_embedding = self.generate_embedding(rfp_text)
+        print("Embedding length:", len(rfp_embedding) if rfp_embedding else None)
+
+        rfp_id = self.rfps_col.insert_one(
+            {
+                "rfp_data": rfp_json,
+                "rfp_text": rfp_text,
+                "embedding": rfp_embedding,
+            }
+        ).inserted_id
+
+        print("✅ RFP stored in MongoDB with _id:", rfp_id)
+        return rfp_embedding
+
+    def match_rfp_to_products(self, rfp_embedding, top_k=5):
+        matches = self.search_products(rfp_embedding, top_k)
+
+        print("\n===== MATCHING PRODUCTS =====\n")
+        for m in matches:
+            print("Name:", m.get("name"))
+            print("SKU:", m.get("sku"))
+            print("Score:", m.get("_score"))
+            print("-" * 40)
+
+        return matches
+
+
+# ---- RUN THE AGENT ----
+
+API_KEY = "AIzaSyDO8fUh6ClNXRiSgpzzcJR51hwebNpdbt0"   # replace this
+MONGO_URL = "mongodb+srv://sharibhasnain8_db_user:V9trVf1wTe8GDUuW@sharib.urytptj.mongodb.net/?retryWrites=true&w=majority&appName=Sharib"
+
+
+agent = TechnicalAgent(API_KEY, MONGO_URL)
+
+agent.update_product_embeddings()
+
+rfp_embedding = agent.upload_and_store_rfp()
+
+agent.match_rfp_to_products(rfp_embedding)
