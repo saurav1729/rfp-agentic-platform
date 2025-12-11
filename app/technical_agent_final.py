@@ -144,8 +144,8 @@ class TechnicalAgent:
 
 # ---- RUN THE AGENT ----
 
-API_KEY = "AIzaSyDO8fUh6ClNXRiSgpzzcJR51hwebNpdbt0"   # replace this
-MONGO_URL = "mongodb+srv://sharibhasnain8_db_user:V9trVf1wTe8GDUuW@sharib.urytptj.mongodb.net/?retryWrites=true&w=majority&appName=Sharib"
+API_KEY = "AIzaSyC2Ihcm8HYa26o9st936njU12EwrwaX37w"   # replace this
+MONGO_URL = "mongodb+srv://sharibhasnain8_db_user:6P.Mgj#WB*wDULr@sharib.urytptj.mongodb.net/?appName=Sharib"
 
 
 agent = TechnicalAgent(API_KEY, MONGO_URL)
