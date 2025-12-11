@@ -1,5 +1,21 @@
 fastapi
 uvicorn[standard]
+
+# Pydantic + Settings
 pydantic>=2.0
 pydantic-settings
 python-dotenv
+
+# Google Gemini SDKs
+google-generativeai
+google-ai-generativelanguage
+
+# Database
+pymongo
+
+# NLP
+nltk
+
+# HTTP Utilities
+requests
+
