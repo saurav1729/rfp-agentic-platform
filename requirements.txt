@@ -3,3 +3,8 @@ uvicorn[standard]
 pydantic>=2.0
 pydantic-settings
 python-dotenv
+google-ai-generativelanguage
+google-generativeai
+pymongo
+nltk
+

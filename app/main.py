@@ -14,6 +14,12 @@ from app.config.settings import settings
 from app.core.logging_config import configure_logging
 from app.api.router import router as api_router
 
+from app.listeners.technical_listener import start as tech_start
+# from app.listeners.pricing_listener import start as pricing_start
+# from app.listeners.proposal_listener import start as proposal_start
+# from app.listeners.legal_listener import start as legal_start
+# from app.listeners.human_listener import start as human_start
+
 # Optional DB module: we'll import with try/except so app still works without DB.
 try:
     from app.db.mongo import mongo_client  # <- stub provided below
@@ -22,33 +28,31 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    Lifespan manager. Connect to resources here (DB, caches, schedulers).
-    If a DB module is present, it will be used; otherwise we skip DB steps.
-    """
     logger.info("Starting app %s %s", settings.APP_NAME, settings.APP_VERSION)
 
-    # Initialize optional components (Sentry, metrics) if configured
-    if settings.SENTRY_DSN:
-        # import and init sentry here (optional)
-        logger.info("Sentry DSN found (not initialized in stub)")
-
-    # Connect DB if module is present
+    # DB Connect
     if mongo_client is not None:
         try:
             await mongo_client.connect()
             logger.info("MongoDB connected")
         except Exception:
             logger.exception("Failed to connect to MongoDB during startup")
-            # Decide: raise to abort startup or continue with degraded mode
             raise
 
-    yield  # application running
+    # 💡 START LISTENERS HERE — inside lifespan
+    print("🚀 Starting all event listeners...")
+    tech_start()
+    # pricing_start()
+    # proposal_start()
+    # legal_start()
+    # human_start()
+    print("✅ All listeners running in background.")
 
-    # Graceful shutdown: disconnect resources
+    yield   # App is running!
+
+    # Shutdown
     if mongo_client is not None:
         try:
             await mongo_client.disconnect()
