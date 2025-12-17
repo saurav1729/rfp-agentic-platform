@@ -1,5 +1,12 @@
 fastapi
-uvicorn[standard]
-pydantic>=2.0
+uvicorn
+pydantic
 pydantic-settings
 python-dotenv
+requests
+pymongo
+dnspython
+google-generativeai
+selenium
+webdriver-manager
+tqdm
