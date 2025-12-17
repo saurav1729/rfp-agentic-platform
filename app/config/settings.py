@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings
 from typing import List, Optional
 import os
 import json
+from typing import Optional
 
 
 def _env_list(key: str, default: List[str]) -> List[str]:
@@ -68,12 +69,31 @@ class Settings(BaseSettings):
 
     # MongoDB (optional; set MONGO_URI in .env when you add Mongo)
     MONGO_URI: Optional[str] = os.getenv("MONGO_URI", None)
+    MONGODB_DB: str = "rfp_platform" 
+    AGENTS_ENABLED: List[str] = ["sales", "technical", "pricing", "proposal"]
 
     # Observability / monitoring
     SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN", None)
 
     # GenAI API Key
     GENAI_API_KEY: Optional[str] = os.getenv("GENAI_API_KEY", None)
+    LLM_MODEL: str = "gemini/gemini-1.5-flash" 
+
+    EMAIL_ENABLED: bool = True
+    EMAIL_ADDRESS: Optional[str] = 'i.m.saurav003@gmail.com'
+    EMAIL_PASSWORD: Optional[str] = 'pzlwlhsckiyktkre'
+    EMAIL_CHECK_INTERVAL_MINUTES: int = int(os.getenv("EMAIL_CHECK_INTERVAL_MINUTES", "60"))
+
+
+
+     # Discovery Configuration
+    DISCOVERY_INTERVAL_MINUTES: int = 60
+    DISCOVERY_ENABLED: bool = True
+    DISCOVERY_SOURCES: List[str] = ["sam_gov", "bidnet", "email"]
+    
+    # Workflow
+    MAX_RETRIES: int = 3
+    WORKFLOW_TIMEOUT: int = 300
 
     # LLM Configuration (kept commented / optional)
     # LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")

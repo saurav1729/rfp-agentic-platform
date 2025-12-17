@@ -6,6 +6,7 @@ from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
 import os
 load_dotenv()
+import asyncio
 
 
 
@@ -20,6 +21,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config.settings import settings 
 from app.core.logging_config import configure_logging
 from app.api.router import router as api_router
+from app.services.discovery_scheduler import DiscoveryScheduler
+from app.db.database import init_db, close_db  
 
 from app.config.settings import settings
 # from app.listeners.technical_listener import start as tech_start
@@ -31,16 +34,20 @@ from app.listeners.main_listener import start as main_listener
 
 # Optional DB module: we'll import with try/except so app still works without DB.
 try:
-    from app.db.mongo import mongo_client  # <- stub provided below
+    from app.db.database import get_database 
 except Exception:
-    mongo_client = None
+    mongo_client = get_database
+
 
 logger = logging.getLogger(__name__)
+discovery_task = None
+discovery_scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting app %s %s", settings.APP_NAME, settings.APP_VERSION)
 
+    global discovery_task, discovery_scheduler
     import google.generativeai as genai
 
     print("Configuring GenAI with API Key:", settings.GENAI_API_KEY is not None)
@@ -49,13 +56,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     genai.configure(api_key=settings.GENAI_API_KEY)
 
     # DB Connect
-    if mongo_client is not None:
-        try:
-            await mongo_client.connect()
-            logger.info("MongoDB connected")
-        except Exception:
-            logger.exception("Failed to connect to MongoDB during startup")
-            raise
+    try:
+        init_db()
+        logger.info("✓ MongoDB initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize MongoDB: {str(e)}")
+
+    try:
+        email_config = None
+        print(f"DEBUG: Enabled={settings.EMAIL_ENABLED}, Email={settings.EMAIL_ADDRESS}, Pwd set={'Yes' if settings.EMAIL_PASSWORD else 'No'}")
+        if settings.EMAIL_ENABLED and settings.EMAIL_ADDRESS and settings.EMAIL_PASSWORD:
+            email_config = {
+                'email': settings.EMAIL_ADDRESS,
+                'password': settings.EMAIL_PASSWORD
+            }
+        
+        discovery_scheduler = DiscoveryScheduler(
+            email_config=email_config
+        )
+        
+        if settings.DISCOVERY_ENABLED:
+            logger.info(f"Starting continuous RFP discovery (interval: {settings.DISCOVERY_INTERVAL_MINUTES}min)")
+            discovery_task = asyncio.create_task(
+                discovery_scheduler.start_continuous_discovery(
+                    interval_minutes=settings.DISCOVERY_INTERVAL_MINUTES
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Discovery scheduler failed to start: {str(e)}")
+    
+    yield
+
+
+   
 
     # 💡 START LISTENERS HERE — inside lifespan
     # print("🚀 Starting all event listeners...")
@@ -70,13 +103,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield   # App is running!
 
-    # Shutdown
-    if mongo_client is not None:
+     # Cleanup
+    logger.info(f"Shutting down {settings.APP_NAME}")
+    if discovery_task:
+        discovery_task.cancel()
         try:
-            await mongo_client.disconnect()
-            logger.info("MongoDB disconnected")
-        except Exception:
-            logger.exception("Error while disconnecting MongoDB")
+            await discovery_task
+        except asyncio.CancelledError:
+            logger.info("Discovery scheduler stopped")
+    
+    close_db()
+
 
 
 def create_app() -> FastAPI:
