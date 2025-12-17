@@ -3,6 +3,13 @@ from contextlib import asynccontextmanager
 import logging
 from typing import AsyncGenerator, Optional
 
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+
+
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,15 +17,17 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config.settings import settings
+from app.config.settings import settings 
 from app.core.logging_config import configure_logging
 from app.api.router import router as api_router
 
-from app.listeners.technical_listener import start as tech_start
+from app.config.settings import settings
+# from app.listeners.technical_listener import start as tech_start
 # from app.listeners.pricing_listener import start as pricing_start
 # from app.listeners.proposal_listener import start as proposal_start
 # from app.listeners.legal_listener import start as legal_start
 # from app.listeners.human_listener import start as human_start
+from app.listeners.main_listener import start as main_listener
 
 # Optional DB module: we'll import with try/except so app still works without DB.
 try:
@@ -32,6 +41,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting app %s %s", settings.APP_NAME, settings.APP_VERSION)
 
+    import google.generativeai as genai
+
+    print("Configuring GenAI with API Key:", settings.GENAI_API_KEY is not None)
+    print("GENAI_API_KEY value (first 5 chars):", settings.GENAI_API_KEY[:5] if settings.GENAI_API_KEY else "None")
+
+    genai.configure(api_key=settings.GENAI_API_KEY)
+
     # DB Connect
     if mongo_client is not None:
         try:
@@ -42,13 +58,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             raise
 
     # 💡 START LISTENERS HERE — inside lifespan
-    print("🚀 Starting all event listeners...")
-    tech_start()
+    # print("🚀 Starting all event listeners...")
+    # tech_start()
     # pricing_start()
     # proposal_start()
     # legal_start()
     # human_start()
-    print("✅ All listeners running in background.")
+    # print("✅ All listeners running in background.")
+    print("🚀 Starting main listener...")
+    main_listener()  # Start main listener
 
     yield   # App is running!
 

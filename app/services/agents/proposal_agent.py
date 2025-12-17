@@ -91,7 +91,7 @@ RFP Scope:
     # Final proposal
     # ---------------------------
 
-    def generate_proposal(
+    def process_rfp(
         self,
         rfp_title: str,
         rfp_summary: str,

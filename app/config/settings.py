@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # Observability / monitoring
     SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN", None)
 
+    # GenAI API Key
+    GENAI_API_KEY: Optional[str] = os.getenv("GENAI_API_KEY", None)
+
     # LLM Configuration (kept commented / optional)
     # LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
     # LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4")
